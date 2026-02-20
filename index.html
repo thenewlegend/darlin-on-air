@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Private Listening</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{ --border:rgba(255,255,255,.25); --accent:#8be9ff; }
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,sans-serif}
+html,body{height:100%;width:100%;overflow:hidden;background:#05070d;color:#fff;touch-action:manipulation;}
+.wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;}
+.bg{position:fixed;inset:0;background:radial-gradient(circle at 20% 20%,#1b2d55,transparent 40%),radial-gradient(circle at 80% 80%,#2c1b55,transparent 40%),#05070d;transition:1s ease;}
+.bg.dim{filter:brightness(.3) blur(6px)}
+.player{width:100%;max-width:420px;height:100%;max-height:760px;backdrop-filter: blur(70px) saturate(180%);background:linear-gradient(160deg,rgba(255,255,255,.16),rgba(255,255,255,.05));border:1px solid var(--border);border-radius:34px;padding:20px;box-shadow:inset 0 1px 1px rgba(255,255,255,.35),0 30px 100px rgba(0,0,0,.85);display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;transition:1s cubic-bezier(.2,.8,.2,1);} 
+.player.playing{box-shadow:inset 0 1px 1px rgba(255,255,255,.45),0 0 100px rgba(139,233,255,.5),0 40px 140px rgba(0,0,0,.95);} 
+.cover{width:100%;aspect-ratio:1/1;border-radius:20px;background-size:cover;background-position:center;box-shadow:0 20px 40px rgba(0,0,0,.6);transition:.6s;}
+.meta{margin-top:10px;text-align:center}
+.meta h1{font-size:1.25rem;font-weight:600}
+.meta p{opacity:.65;font-size:.9rem;margin-top:4px}
+.wave-wrap{height:50px;margin-top:12px}
+canvas{width:100%;height:100%}
+.progress{height:8px;background:rgba(255,255,255,.18);border-radius:10px;margin-top:12px}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,#8be9ff,#fff)}
+.time{display:flex;justify-content:space-between;font-size:.8rem;opacity:.7;margin-top:6px}
+.buttons{display:flex;justify-content:center;gap:26px;margin-top:12px;}
+button.ctrl{width:72px;height:72px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:linear-gradient(145deg,rgba(255,255,255,.25),rgba(255,255,255,.05));backdrop-filter:blur(20px);color:#fff;font-size:26px;box-shadow: inset 0 1px 1px rgba(255,255,255,.4),0 10px 30px rgba(0,0,0,.6);cursor:pointer;transition:.2s;}button.ctrl:active{transform:scale(.9)}
+.mode-switch{margin-top:14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;display:flex;overflow:hidden;}
+.mode-btn{flex:1;padding:10px 0;text-align:center;font-size:.9rem;cursor:pointer;user-select:none;}
+.mode-btn.active{background:linear-gradient(90deg,#8be9ff,#fff);color:#000;font-weight:600;}
+.compact-1 .cover{aspect-ratio:16/9}
+.compact-2 .cover{display:none}
+.compact-2 .meta p{display:none}
+</style>
+</head>
+<body>
+<div class="bg" id="bg"></div>
+<div class="wrap">
+<div class="player" id="player">
+
+<div>
+  <div class="cover" id="cover"></div>
+  <div class="meta">
+    <h1 id="title">Private Episode</h1>
+    <p id="desc">Tap play and listen</p>
+  </div>
+  <div class="wave-wrap"><canvas id="wave"></canvas></div>
+  <div class="progress" id="progress"><div class="progress-bar" id="bar"></div></div>
+  <div class="time"><span id="current">0:00</span><span id="duration">0:00</span></div>
+</div>
+
+<div>
+  <div class="buttons">
+    <button class="ctrl" id="back">⏮</button>
+    <button class="ctrl" id="play">▶</button>
+    <button class="ctrl" id="forward">⏭</button>
+  </div>
+  <div class="mode-switch">
+    <div class="mode-btn active" data-mode="0">Large</div>
+    <div class="mode-btn" data-mode="1">Medium</div>
+    <div class="mode-btn" data-mode="2">Simple</div>
+  </div>
+</div>
+
+</div>
+</div>
+
+<!-- IMPORTANT: must be DIRECT MP3 LINK -->
+<audio id="audio" src="https://raw.githubusercontent.com/rafaelreis-hotmart/Audio-Sample-files/master/sample.mp3" preload="auto" crossorigin="anonymous"></audio>
+
+<script>
+const audio=document.getElementById('audio');
+const playBtn=document.getElementById('play');
+const bar=document.getElementById('bar');
+const progress=document.getElementById('progress');
+const current=document.getElementById('current');
+const duration=document.getElementById('duration');
+const player=document.getElementById('player');
+const bg=document.getElementById('bg');
+
+// cover
+const coverUrl="https://cover.com";
+document.getElementById('cover').style.backgroundImage=`url('${coverUrl}')`;
+
+// restore progress
+const saved=localStorage.getItem('podcast-progress');
+if(saved) audio.currentTime=saved;
+
+// ===== CRITICAL: SAFE PLAY/PAUSE =====
+async function togglePlay(){
+ try{
+  if(audio.paused){
+    await audio.play();
+    playBtn.textContent='❚❚';
+    player.classList.add('playing');
+    bg.classList.add('dim');
+    initAudio();
+  }else{
+    audio.pause();
+    playBtn.textContent='▶';
+    player.classList.remove('playing');
+    bg.classList.remove('dim');
+  }
+ }catch(e){
+  alert("Audio failed to play. Check audio link is direct .mp3 and public.");
+ }
+}
+playBtn.onclick=togglePlay;
+
+// progress
+audio.addEventListener('timeupdate',()=>{
+ localStorage.setItem('podcast-progress',audio.currentTime);
+ const p=(audio.currentTime/audio.duration)*100;
+ bar.style.width=p+"%";
+ current.textContent=format(audio.currentTime);
+});
+
+audio.addEventListener('loadedmetadata',()=>{
+ duration.textContent=format(audio.duration);
+});
+
+// ===== waveform engine =====
+let audioCtx, analyser, source, dataArray;
+function initAudio(){
+ if(audioCtx) return;
+ audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+ analyser=audioCtx.createAnalyser();
+ source=audioCtx.createMediaElementSource(audio);
+ source.connect(analyser);
+ analyser.connect(audioCtx.destination);
+ analyser.fftSize=256;
+ dataArray=new Uint8Array(analyser.frequencyBinCount);
+ draw();
+}
+
+function draw(){
+ requestAnimationFrame(draw);
+ if(!analyser) return;
+ analyser.getByteFrequencyData(dataArray);
+ let bass=dataArray.slice(0,8).reduce((a,b)=>a+b,0)/8;
+ let intensity=bass/255;
+ player.style.boxShadow=`inset 0 1px 1px rgba(255,255,255,.4),0 0 ${40+intensity*120}px rgba(139,233,255,.5),0 30px 100px rgba(0,0,0,.9)`;
+ const canvas=document.getElementById('wave');
+ const ctx=canvas.getContext('2d');
+ canvas.width=canvas.offsetWidth;
+ canvas.height=canvas.offsetHeight;
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ const w=canvas.width/dataArray.length;
+ for(let i=0;i<dataArray.length;i++){
+  const h=dataArray[i]/255*canvas.height;
+  ctx.fillStyle='rgba(139,233,255,.95)';
+  ctx.fillRect(i*w,canvas.height-h,w*0.7,h);
+ }
+}
+
+// seek
+progress.onclick=e=>{
+ const r=progress.getBoundingClientRect();
+ const pct=(e.clientX-r.left)/r.width;
+ audio.currentTime=pct*audio.duration;
+};
+
+document.getElementById('back').onclick=()=>audio.currentTime-=10;
+document.getElementById('forward').onclick=()=>audio.currentTime+=10;
+function format(s){const m=Math.floor(s/60);const sec=Math.floor(s%60).toString().padStart(2,'0');return `${m}:${sec}`}
+
+// mode switch
+const modeBtns=document.querySelectorAll('.mode-btn');
+modeBtns.forEach(btn=>{
+ btn.onclick=()=>{
+  player.classList.remove('compact-0','compact-1','compact-2');
+  player.classList.add(`compact-${btn.dataset.mode}`);
+  modeBtns.forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+ };
+});
+</script>
+</body>
+</html>
